@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Trabajos</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.1.3/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.1.3/firebase-storage.js"></script>
+    <style>
+        body {
+            background-color: #121212;
+            color: #e0e0e0;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .container {
+            width: 90%;
+            max-width: 332px;
+            background-color: #1e1e1e;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h1 {
+            color: #6200ea;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        input, button {
+            margin: 10px 0;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            width: 95%;
+            font-size: 16px;
+        }
+        input {
+            background-color: #333;
+            color: #e0e0e0;
+        }
+        button {
+            background-color: #6200ea;
+            color: white;
+            cursor: pointer;
+            text-align: center;
+        }
+        button:hover {
+            background-color: #3700b3;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            display: none;
+        }
+        th, td {
+            border: 1px solid #444;
+            padding: 10px;
+            text-align: left;
+        }
+        th {
+            background-color: #6200ea;
+        }
+        tr:nth-child(even) {
+            background-color: #333;
+        }
+        .download-buttons {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 20px;
+        }
+        .download-buttons button {
+            margin: 5px;
+            background-color: #03dac5;
+        }
+        .download-buttons button:hover {
+            background-color: #018786;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Gestión de Trabajos</h1>
+        <input type="text" id="ubicacion" placeholder="Ubicación" required>
+        <input type="text" id="descripcion" placeholder="Descripción" required>
+        <input type="text" id="observaciones" placeholder="Observaciones" required>
+        <button onclick="registrarTrabajo()">Registrar Trabajo</button>
+        <button onclick="toggleTrabajos()">Ver Trabajos</button>
+        <button onclick="eliminarTrabajos()">Eliminar Todos los Trabajos</button>
+        
+        <table id="trabajosTable">
+            <thead>
+                <tr>
+                    <th>Ubicación</th>
+                    <th>Descripción</th>
+                    <th>Observaciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Los trabajos se cargarán aquí -->
+            </tbody>
+        </table>
+        
+        <div class="download-buttons">
+            <button onclick="descargarTrabajos()">Descargar como Excel</button>
+        </div>
+    </div>
+
+    <script>
+        // Configuración de Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyAn2mkzRm5-JcV0409s0zqmKtxpifWTtZQ",
+            authDomain: "trabajos-33608.firebaseapp.com",
+            databaseURL: "https://trabajos-33608-default-rtdb.firebaseio.com",
+            projectId: "trabajos-33608",
+            storageBucket: "trabajos-33608.appspot.com",
+            messagingSenderId: "54040184221",
+            appId: "1:54040184221:web:02286699cf13954c369b74"
+        };
+
+        // Inicializar Firebase
+        const app = firebase.initializeApp(firebaseConfig);
+        const storage = firebase.storage();
+
+        // Abre la base de datos o la crea si no existe
+        let db;
+        const request = indexedDB.open("TrabajosDB", 1);
+
+        request.onerror = (event) => {
+            console.log("Error al abrir la base de datos:", event);
+        };
+
+        request.onsuccess = (event) => {
+            db = event.target.result;
+            console.log("Base de datos abierta:", db);
+        };
+
+        request.onupgradeneeded = (event) => {
+            db = event.target.result;
+            const objectStore = db.createObjectStore("trabajos", { keyPath: "id", autoIncrement: true });
+            objectStore.createIndex("ubicacion", "ubicacion", { unique: false });
+            objectStore.createIndex("descripcion", "descripcion", { unique: false });
+            objectStore.createIndex("observaciones", "observaciones", { unique: false });
+        };
+
+        // Función para registrar un trabajo
+        function registrarTrabajo() {
+            const ubicacion = document.getElementById('ubicacion').value;
+            const descripcion = document.getElementById('descripcion').value;
+            const observaciones = document.getElementById('observaciones').value;
+
+            if (ubicacion && descripcion && observaciones) {
+                const transaction = db.transaction(["trabajos"], "readwrite");
+                const objectStore = transaction.objectStore("trabajos");
+
+                const trabajo = { ubicacion, descripcion, observaciones };
+                const request = objectStore.add(trabajo);
+
+                request.onsuccess = () => {
+                    alert('Trabajo registrado correctamente.');
+                    document.getElementById('ubicacion').value = '';
+                    document.getElementById('descripcion').value = '';
+                    document.getElementById('observaciones').value = '';
+                    cargarTrabajos();
+                };
+
+                request.onerror = () => {
+                    alert('Error al registrar el trabajo.');
+                };
+            } else {
+                alert('Por favor, complete todos los campos.');
+            }
+        }
+
+        // Función para eliminar todos los trabajos
+        function eliminarTrabajos() {
+            if (confirm('¿Estás seguro de que deseas eliminar todos los trabajos? Esta acción no se puede deshacer.')) {
+                const transaction = db.transaction(["trabajos"], "readwrite");
+                const objectStore = transaction.objectStore("trabajos");
+                const request = objectStore.clear();
+
+                request.onsuccess = () => {
+                    alert('Todos los trabajos han sido eliminados.');
+                    cargarTrabajos();
+                };
+
+                request.onerror = () => {
+                    alert('Error al eliminar los trabajos.');
+                };
+            }
+        }
+
+        // Función para cargar trabajos desde IndexedDB
+        function cargarTrabajos() {
+            const transaction = db.transaction(["trabajos"], "readonly");
+            const objectStore = transaction.objectStore("trabajos");
+
+            const trabajosTableBody = document.getElementById('trabajosTable').getElementsByTagName('tbody')[0];
+            trabajosTableBody.innerHTML = '';  // Limpiar la tabla antes de agregar datos
+
+            objectStore.openCursor().onsuccess = (event) => {
+                const cursor = event.target.result;
+                if (cursor) {
+                    const trabajo = cursor.value;
+                    const row = trabajosTableBody.insertRow();
+
+                    const cellUbicacion = row.insertCell(0);
+                    const cellDescripcion = row.insertCell(1);
+                    const cellObservaciones = row.insertCell(2);
+
+                    cellUbicacion.textContent = trabajo.ubicacion;
+                    cellDescripcion.textContent = trabajo.descripcion;
+                    cellObservaciones.textContent = trabajo.observaciones;
+
+                    cursor.continue();
+                }
+            };
+
+            document.getElementById('trabajosTable').style.display = trabajosTableBody.rows.length > 0 ? 'table' : 'none';
+        }
+
+        // Función para alternar la visibilidad de la tabla de trabajos
+        function toggleTrabajos() {
+            const table = document.getElementById('trabajosTable');
+            if (table.style.display === 'none' || table.style.display === '') {
+                cargarTrabajos();
+                table.style.display = 'table';
+            } else {
+                table.style.display = 'none';
+            }
+        }
+
+        // Función para descargar trabajos en formato Excel
+        function descargarTrabajos() {
+            const transaction = db.transaction(["trabajos"], "readonly");
+            const objectStore = transaction.objectStore("trabajos");
+
+            const trabajos = [];
+
+            objectStore.openCursor().onsuccess = (event) => {
+                const cursor = event.target.result;
+                if (cursor) {
+                    trabajos.push(cursor.value);
+                    cursor.continue();
+                } else {
+                    // Crear el archivo Excel
+                    const ws = XLSX.utils.json_to_sheet(trabajos);
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, "Trabajos");
+
+                    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+                    const blob = new Blob([wbout], { type: 'application/octet-stream' });
+
+                    // Subir el archivo a Firebase Storage
+                    const storageRef = storage.ref().child('trabajos.xlsx');
+                    const uploadTask = storageRef.put(blob);
+
+                    uploadTask.on('state_changed', 
+                        (snapshot) => {
+                            // Progreso de la subida (opcional)
+                        }, 
+                        (error) => {
+                            console.error('Error al subir el archivo:', error);
+                        }, 
+                        () => {
+                            // Obtener la URL de descarga
+                            uploadTask.snapshot.ref.getDownloadURL().then((downloadURL) => {
+                                // Crear un enlace de descarga
+                                const link = document.createElement('a');
+                                link.href = downloadURL;
+                                link.download = 'trabajos.xlsx';
+                                link.click();
+                            });
+                        }
+                    );
+                }
+            };
+        }
+    </script>
+</body>
+</html>
